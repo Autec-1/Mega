@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Análise Mega-Sena & Gerador de Jogos</title>
+  <style>
+    :root {
+      --bg: #0f172a; /* slate-900 */
+      --panel: #111827; /* gray-900 */
+      --text: #e5e7eb; /* gray-200 */
+      --muted: #94a3b8; /* slate-400 */
+      --accent: #10b981; /* emerald-500 */
+      --accent2: #60a5fa; /* blue-400 */
+      --warn: #f59e0b; /* amber-500 */
+      --danger: #ef4444; /* red-500 */
+    }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 24px; border-bottom: 1px solid #1f2937; background: #0b1220; }
+    h1 { margin: 0; font-size: 24px; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .panel { background: var(--panel); border: 1px solid #1f2937; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .panel h2 { margin-top: 0; font-size: 18px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    label { display: block; margin-bottom: 8px; color: var(--muted); }
+    input[type=file], select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: var(--text); }
+    button { background: var(--accent); border: none; color: black; font-weight: 600; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+    button.secondary { background: var(--accent2); color: black; }
+    button.warn { background: var(--warn); color: black; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #0b1220; border: 1px solid #374151; color: var(--muted); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #1f2937; padding: 8px; text-align: left; }
+    th { color: var(--muted); font-weight: 600; }
+    .card { border: 1px dashed #374151; border-radius: 12px; padding: 12px; }
+    .note { font-size: 12px; color: var(--muted); }
+    .number-chip { display:inline-block; padding: 4px 8px; margin: 2px; border-radius: 8px; background:#0b1220; border:1px solid #374151; }
+    canvas { background: #0b1220; border: 1px solid #374151; border-radius: 8px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>🔢 Mega Sena - GABIS</h1>
+    <p class="note">Bora apostar galera.</p>
+  </header>
+  <div class="container">
+    <div class="panel">
+      <h2>1) Importar histórico oficial (.xlsx da CAIXA)</h2>
+      <div class="row">
+        <div>
+          <label>Arquivo XLSX (Mega-Sena):</label>
+          <input type="file" id="fileInput" accept=".xlsx,.xls" />
+          
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="btnCarregar">Carregar & Analisar</button>
+        <button class="secondary" id="btnLimpar">Limpar</button>
+      </div>
+    </div>
+
+    <div id="resultadoImport" class="panel" style="display:none;"></div>
+
+    <div class="panel" id="analisePanel" style="display:none;">
+      <h2>2) Análise estatística das dezenas</h2>
+      <div class="row">
+        <div>
+          <div class="card" style="margin-top:8px;">
+            <p><strong>Top 10 mais frequentes</strong></p>
+            <div id="top10"></div>
+          </div>
+          <div class="card" style="margin-top:8px;">
+            <p><strong>Top 10 menos frequentes</strong></p>
+            <div id="bottom10"></div>
+          </div>
+        </div>
+        <div>
+          <label>Frequência por dezena (1–60)</label>
+          <canvas id="freqChart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div class="card">
+          <p><strong>Gerar jogos</strong></p>
+          <div class="btn-row">
+            <button id="btnGerar6">Gerar 60 jogos (6 dezenas)</button>
+            <button id="btnGerar7" class="secondary">Gerar 2 jogos (7 dezenas)</button>
+            <button id="btnGerar8" class="secondary">Gerar 2 jogos (8 dezenas)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="jogosPanel" style="display:none;">
+      <h2>3) Jogos gerados</h2>
+      <div id="jogosResumo" class="note"></div>
+      <table id="tabelaJogos" style="margin-top:8px;">
+        <thead><tr><th>#</th><th>Dezenas</th><th>Tamanho</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="btnCSV" class="secondary">Baixar CSV</button>
+        <button id="btnXLSX" class="secondary">Baixar XLSX</button>
+        <button id="btnReset" class="warn">Resetar jogos</button>
+      </div>
+      
+    </div>
+  </div>
+
+<script>
+// RNG padrão do navegador (sem seed)
+let rng = Math.random;
+
+let sorteios = [];
+let freq = Array(61).fill(0);
+let ultimoSorteio = [];
+let jogosGerados = [];
+
+function parseXLSX(workbook) {
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  if (!raw || raw.length < 2) throw new Error('Planilha inválida ou sem dados.');
+  const headers = raw[0].map(h => (h || '').toString().trim().toLowerCase());
+
+  const dezCols = [];
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (!h) continue;
+    if (h.match(/(bola|dezena|sorteio|num|nº|n\.)\s*\d+/)) dezCols.push(c);
+    else if (h.match(/^\d+$/)) dezCols.push(c);
+  }
+  const idxConcurso = headers.findIndex(h => h.includes('concurso'));
+  const idxData = headers.findIndex(h => h.includes('data'));
+
+  const rows = raw.slice(1);
+  sorteios = [];
+  for (const r of rows) {
+    if (!r || r.length === 0) continue;
+    let dezenas = [];
+    if (dezCols.length >= 6) {
+      for (const c of dezCols) {
+        const v = Number(r[c]);
+        if (Number.isFinite(v) && v >= 1 && v <= 60) dezenas.push(v);
+      }
+      const set = Array.from(new Set(dezenas)).filter(x => x>=1 && x<=60);
+      dezenas = set.slice(0, 6);
+    } else {
+      for (const cell of r) {
+        const v = Number(cell);
+        if (Number.isFinite(v) && v >= 1 && v <= 60) dezenas.push(v);
+      }
+      const set = Array.from(new Set(dezenas)).filter(x => x>=1 && x<=60);
+      dezenas = set.slice(0, 6);
+    }
+    if (dezenas.length === 6) {
+      const concurso = idxConcurso >= 0 ? r[idxConcurso] : undefined;
+      const data = idxData >= 0 ? r[idxData] : undefined;
+      sorteios.push({ concurso, data, dezenas: dezenas.sort((a,b)=>a-b) });
+    }
+  }
+  if (sorteios.length === 0) throw new Error('Não foi possível identificar dezenas nas linhas.');
+
+  const allHaveConcurso = sorteios.every(s => s.concurso !== undefined && s.concurso !== null && s.concurso !== '');
+  if (allHaveConcurso) sorteios.sort((a,b)=> Number(a.concurso) - Number(b.concurso));
+
+  freq = Array(61).fill(0);
+  for (const s of sorteios) for (const d of s.dezenas) freq[d]++;
+  ultimoSorteio = sorteios[sorteios.length-1].dezenas.slice();
+}
+
+function calcularAtraso() {
+  const indicesUltima = Array(61).fill(-1);
+  for (let i=0; i<sorteios.length; i++) {
+    for (const d of sorteios[i].dezenas) indicesUltima[d] = i;
+  }
+  const atraso = Array(61).fill(0);
+  const lastIdx = sorteios.length - 1;
+  for (let d=1; d<=60; d++) atraso[d] = indicesUltima[d] >= 0 ? (lastIdx - indicesUltima[d]) : sorteios.length;
+  return atraso;
+}
+
+let chart;
+function desenharChart() {
+  const ctx = document.getElementById('freqChart');
+  const labels = Array.from({length:60}, (_,i)=> (i+1).toString().padStart(2,'0'));
+  const data = labels.map((_,i)=> freq[i+1]);
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Frequência por dezena',
+        data,
+        backgroundColor: labels.map(l => Number(l)%2===0 ? 'rgba(96,165,250,0.7)' : 'rgba(16,185,129,0.7)'),
+        borderColor: '#1f2937', borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#e5e7eb' } },
+        tooltip: { enabled: true }
+      },
+      scales: {
+        x: { ticks: { color: '#e5e7eb' }, grid: { color: '#1f2937' } },
+        y: { ticks: { color: '#e5e7eb' }, grid: { color: '#1f2937' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function preencherTopBottom() {
+  const atraso = calcularAtraso();
+  const items = [];
+  for (let d=1; d<=60; d++) items.push({ d, f: freq[d], a: atraso[d] });
+  const hot = items.slice().sort((x,y)=> y.f - x.f).slice(0,10);
+  const cold = items.slice().sort((x,y)=> x.f - y.f).slice(0,10);
+  document.getElementById('top10').innerHTML = hot.map(it=>`<span class="number-chip">${String(it.d).padStart(2,'0')} · f=${it.f} · atraso=${it.a}</span>`).join(' ');
+  document.getElementById('bottom10').innerHTML = cold.map(it=>`<span class="number-chip">${String(it.d).padStart(2,'0')} · f=${it.f} · atraso=${it.a}</span>`).join(' ');
+}
+
+// ===== Heurísticas com configuração fixa (sem quadro Configurações) =====
+function checarParidade(dezenas) {
+  // Balanceada por padrão
+  const pares = dezenas.filter(d=> d%2===0).length;
+  const impares = dezenas.length - pares;
+  return pares === Math.floor(dezenas.length/2);
+}
+function checarDecadas(dezenas) {
+  // Limite padrão: máx. 2 por década
+  const cont = Array(6).fill(0);
+  for (const d of dezenas) cont[Math.floor((d-1)/10)]++;
+  return cont.every(v=> v<=2);
+}
+function checarConsecutivas(dezenas) {
+  // Máx. 2 consecutivas
+  const a = dezenas.slice().sort((x,y)=>x-y);
+  let run=1, max=1;
+  for (let i=1;i<a.length;i++) {
+    if (a[i]===a[i-1]+1) { run++; max = Math.max(max,run); } else run=1;
+  }
+  return max<=2;
+}
+function evitarUltimo(dezenas) {
+  // Evitar últimas dezenas sorteadas
+  return dezenas.every(d=> !ultimoSorteio.includes(d));
+}
+
+function gerarConjunto(tamanho) {
+  // Composição fixa: 2 quentes, 3 médias, 1 fria (para base 6); proporcional para 7 e 8
+  const itens = [];
+  for (let d=1; d<=60; d++) itens.push({d, f: freq[d]});
+  itens.sort((a,b)=> b.f - a.f);
+  const quentes = itens.slice(0,15).map(x=>x.d);
+  const frias = itens.slice(-15).map(x=>x.d);
+  const medias = itens.slice(15,45).map(x=>x.d);
+
+  const target = tamanho;
+  const pickCount = (q,m,f) => {
+    const total = q+m+f;
+    if (total === target) return [q,m,f];
+    // Ajuste simples: completa com médias
+    while (q+m+f < target) m += 1;
+    return [q,m,f];
+  }
+  let [nq, nm, nf] = pickCount(2,3,1);
+  if (tamanho===7) [nq,nm,nf] = pickCount(2,4,1);
+  if (tamanho===8) [nq,nm,nf] = pickCount(2,5,1);
+
+  const seededShuffle = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const candidatos = [];
+  const pick = (pool, n) => {
+    const shuffled = seededShuffle(pool);
+    for (let i=0;i<shuffled.length && candidatos.length < target && i<n;i++) candidatos.push(shuffled[i]);
+  };
+  pick(quentes, Math.min(nq, target));
+  pick(medias, Math.min(nm, target - candidatos.length));
+  pick(frias, Math.min(nf, target - candidatos.length));
+
+  const todos = seededShuffle(Array.from({length:60},(_,i)=> i+1));
+  for (const t of todos) { if (candidatos.length>=target) break; if (!candidatos.includes(t)) candidatos.push(t); }
+
+  let attempts = 0, melhores = candidatos.slice(0, target).sort((a,b)=>a-b);
+  while (attempts < 500) {
+    const candid = seededShuffle(Array.from({length:60},(_,i)=> i+1));
+    const conjunto = [];
+    for (const c of candid) { if (conjunto.length===target) break; if (!conjunto.includes(c)) conjunto.push(c); }
+    conjunto.sort((a,b)=>a-b);
+    const okP = checarParidade(conjunto);
+    const okD = checarDecadas(conjunto);
+    const okC = checarConsecutivas(conjunto);
+    const okU = evitarUltimo(conjunto);
+    if (okP && okD && okC && okU) { melhores = conjunto; break; }
+    attempts++;
+  }
+  return melhores;
+}
+
+function gerarJogos(qtd, tamanho) {
+  const jogos = [];
+  const usados = new Set();
+  let tentativas = 0;
+  while (jogos.length < qtd && tentativas < qtd*200) {
+    const j = gerarConjunto(tamanho);
+    const key = j.join('-');
+    if (!usados.has(key)) { usados.add(key); jogos.push({ tamanho, dezenas: j }); }
+    tentativas++;
+  }
+  return jogos;
+}
+
+function baixarCSV(jogos) {
+  const linhas = ['jogo;tam;dezenas'];
+  jogos.forEach((j,idx)=> { linhas.push(`${idx+1};${j.tamanho};${j.dezenas.join(',')}`); });
+  const blob = new Blob([linhas.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'jogos_mega_sena.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+function baixarXLSX(jogos) {
+  const rows = [['Jogo','# Dezenas','Dezenas']];
+  jogos.forEach((j,idx)=> rows.push([idx+1, j.tamanho, j.dezenas.join(', ')]));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Jogos');
+  XLSX.writeFile(wb, 'jogos_mega_sena.xlsx');
+}
+
+const btnCarregar = document.getElementById('btnCarregar');
+const btnLimpar = document.getElementById('btnLimpar');
+const fileInput = document.getElementById('fileInput');
+btnLimpar.onclick = () => {
+  sorteios = []; freq = Array(61).fill(0); ultimoSorteio = []; jogosGerados = [];
+  document.getElementById('resultadoImport').style.display = 'none';
+  document.getElementById('analisePanel').style.display = 'none';
+  document.getElementById('jogosPanel').style.display = 'none';
+  fileInput.value = '';
+};
+btnCarregar.onclick = async () => {
+  try {
+    const file = fileInput.files[0];
+    if (!file) throw new Error('Selecione um arquivo XLSX.');
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    parseXLSX(wb);
+    const resDiv = document.getElementById('resultadoImport');
+    resDiv.style.display = 'block';
+    resDiv.innerHTML = `<p><strong>Importado</strong>: ${sorteios.length} concursos encontrados.</p>`;
+    document.getElementById('analisePanel').style.display = 'block';
+    preencherTopBottom();
+    desenharChart();
+  } catch (e) { alert('Falha ao carregar: ' + e.message); }
+};
+
+const btnGerar6 = document.getElementById('btnGerar6');
+const btnGerar7 = document.getElementById('btnGerar7');
+const btnGerar8 = document.getElementById('btnGerar8');
+function renderJogos() {
+  const tbody = document.querySelector('#tabelaJogos tbody');
+  tbody.innerHTML = '';
+  jogosGerados.forEach((j, idx) => {
+    const tr = document.createElement('tr');
+    const tdIdx = document.createElement('td'); tdIdx.textContent = (idx+1);
+    const tdDz = document.createElement('td'); tdDz.textContent = j.dezenas.join(', ');
+    const tdTam = document.createElement('td'); tdTam.textContent = j.tamanho;
+    tr.appendChild(tdIdx); tr.appendChild(tdDz); tr.appendChild(tdTam);
+    tbody.appendChild(tr);
+  });
+  document.getElementById('jogosResumo').textContent = `Total de jogos: ${jogosGerados.length}`;
+  document.getElementById('jogosPanel').style.display = 'block';
+}
+btnGerar6.onclick = () => { const novos = gerarJogos(60, 6); jogosGerados = jogosGerados.concat(novos); renderJogos(); };
+btnGerar7.onclick = () => { const novos = gerarJogos(2, 7); jogosGerados = jogosGerados.concat(novos); renderJogos(); };
+btnGerar8.onclick = () => { const novos = gerarJogos(2, 8); jogosGerados = jogosGerados.concat(novos); renderJogos(); };
+
+const btnCSV = document.getElementById('btnCSV');
+const btnXLSX = document.getElementById('btnXLSX');
+const btnReset = document.getElementById('btnReset');
+btnCSV.onclick = () => baixarCSV(jogosGerados);
+btnXLSX.onclick = () => baixarXLSX(jogosGerados);
+btnReset.onclick = () => { jogosGerados = []; renderJogos(); };
+</script>
+</body>
+</html>
